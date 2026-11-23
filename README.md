@@ -70,7 +70,8 @@ que sirve la API no se toca**.
 # prueba local con una carpeta que contiene AAAA-MM-DD/ (sin bucket)
 uv run python -m mft.job_nocturno --origen ./snapshots --base ./var
 
-# en la VM (ver jobs/systemd/*.service|timer; usa RECO_ORIGEN y RECO_BASE)
+# en la VM: guía paso a paso en docs/despliegue_vm.md (unidades systemd de plantilla en jobs/systemd/)
+# a mano, con RECO_ORIGEN y RECO_BASE
 RECO_ORIGEN=gs://<bucket>/snapshots RECO_BASE=/var/lib/mft jobs/nocturno.sh
 jobs/nocturno.sh --modo evaluar          # corrida completa con evaluación (guarda informes/)
 jobs/nocturno.sh --rollback              # volver a la versión anterior (o --rollback AAAA-MM-DD)

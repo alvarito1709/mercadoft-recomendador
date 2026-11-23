@@ -1,5 +1,5 @@
 [Unit]
-Description=Corre el job nocturno del recomendador todos los días
+Description=Corre el job nocturno del recomendador (%i) todos los días
 
 [Timer]
 # El backend exporta ~03:30; se da una hora de margen.
