@@ -1,0 +1,11 @@
+[Unit]
+Description=Corre el job nocturno del recomendador todos los días
+
+[Timer]
+# El backend exporta ~03:30; se da una hora de margen.
+OnCalendar=*-*-* 04:30:00 America/Argentina/Buenos_Aires
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

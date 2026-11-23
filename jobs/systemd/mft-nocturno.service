@@ -1,0 +1,14 @@
+[Unit]
+Description=MercadoFT recomendador - job nocturno (bajar snapshot, entrenar, publicar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mft
+WorkingDirectory=/opt/mercadoft-recomendador
+Environment=RECO_ORIGEN=gs://CAMBIAR-bucket-snapshots/snapshots
+Environment=RECO_BASE=/var/lib/mft
+ExecStart=/opt/mercadoft-recomendador/jobs/nocturno.sh
+Nice=10
+# exit 1/2/3 marcan la unidad como fallida (se ve con `systemctl status` / `journalctl -u mft-nocturno`)
