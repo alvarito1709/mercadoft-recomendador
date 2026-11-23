@@ -1,1 +1,10 @@
 data/
+out/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+*.joblib
+var/
+snapshots/
