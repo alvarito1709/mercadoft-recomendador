@@ -9,13 +9,13 @@ su puerto, su carpeta de modelos y su carpeta del bucket.
 | Puerto de la API | 8001 | 8000 |
 | Workers | 1 | 2 |
 | Carpeta de trabajo y modelos (`RECO_BASE`) | `/var/lib/mft/dev` | `/var/lib/mft/prod` |
-| Origen de snapshots (`RECO_ORIGEN`) | `gs://training_snapshots/DEV` | `gs://training_snapshots/PROD` |
+| Origen de snapshots (`RECO_ORIGEN`) | `gs://training_snapshots_dev` | `gs://training_snapshots` |
 
 Esta guía arma **dev**. Para prod se repite todo con `prod` en lugar de `dev` (otra API key, puerto 8000, 2 workers).
 
 ```
 backend (Tomcat, VM del backend) --HTTP, IP interna--> API del recomendador (esta VM, 8001/8000)
-backend --gcsfuse--> bucket training_snapshots/DEV --gcloud storage cp--> job nocturno (esta VM) --> modelo --> API
+backend --gcsfuse--> bucket training_snapshots_dev --gcloud storage cp--> job nocturno (esta VM) --> modelo --> API
 ```
 
 La VM del backend y esta VM están en el mismo proyecto y se hablan por IP interna: no hace falta Nginx ni HTTPS
@@ -54,10 +54,11 @@ gcloud compute instances describe <NOMBRE_VM_RECOMENDADOR> --zone=<ZONA> --forma
 
 - Los scopes tienen que incluir `devstorage.read_only` (o `devstorage.full_control` / `cloud-platform`).
   Cambiarlos requiere apagar la VM.
-- Dar lectura sobre el bucket a esa cuenta:
+- Dar lectura sobre el bucket **de la instancia que se está armando** (dev: `training_snapshots_dev`; prod: `training_snapshots`).
+  Así cada instancia solo puede leer sus propios datos:
 
 ```bash
-gcloud storage buckets add-iam-policy-binding gs://training_snapshots \
+gcloud storage buckets add-iam-policy-binding gs://training_snapshots_dev \
   --member="serviceAccount:<EMAIL_DE_LA_CUENTA>" --role="roles/storage.objectViewer"
 ```
 
@@ -101,11 +102,12 @@ Mientras el backend de DEV no exporte solo, se puede subir uno generado en local
 el exportador, por ejemplo `AAAA-MM-DD/` con sus 12 CSV y el `manifest.json`):
 
 ```bash
-gcloud storage cp --recursive <CARPETA_LOCAL>/<AAAA-MM-DD> gs://training_snapshots/DEV/
-gcloud storage ls gs://training_snapshots/DEV/<AAAA-MM-DD>/manifest.json
+gcloud storage cp --recursive <CARPETA_LOCAL>/<AAAA-MM-DD> gs://training_snapshots_dev/
+gcloud storage ls gs://training_snapshots_dev/<AAAA-MM-DD>/manifest.json
 ```
 
-Que el manifest quede dentro de la carpeta con fecha (no suelto en `DEV/`). Un snapshot viejo solo genera una advertencia
+Las carpetas con fecha van en la raíz del bucket y el manifest queda dentro de cada una (no suelto en la raíz). Si preferís
+usar una subcarpeta dentro del bucket, agregala también a `RECO_ORIGEN`. Un snapshot viejo solo genera una advertencia
 en la primera corrida; no la bloquea.
 
 ## 6. Instalar las unidades y entrenar el primer modelo
@@ -156,7 +158,7 @@ RECO_API_ENABLED=true
 RECO_API_URL=http://<IP_INTERNA_VM_RECOMENDADOR>:8001
 RECO_API_KEY=<la misma clave de /etc/mft/dev.env>
 RECO_EXPORT_ENABLED=true
-RECO_EXPORT_DIR=<carpeta donde está montado gs://training_snapshots/DEV, con escritura>
+RECO_EXPORT_DIR=<carpeta donde está montado gs://training_snapshots_dev, con escritura>
 ```
 
 Y encender el recomendador desde la web administrativa (o con
