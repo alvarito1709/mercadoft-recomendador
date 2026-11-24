@@ -1,0 +1,19 @@
+[Unit]
+Description=MercadoFT recomendador - job nocturno (%i): bajar snapshot, entrenar, publicar
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/mft/%i.env
+
+[Service]
+Type=oneshot
+User=mft
+Group=mft
+WorkingDirectory=/opt/mft/%i
+# uv y gcloud tienen que estar en el PATH del servicio (systemd no hereda el del usuario).
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# RECO_ORIGEN (gs://bucket/carpeta) y RECO_BASE (carpeta de trabajo y modelos) salen del archivo de la instancia.
+EnvironmentFile=/etc/mft/%i.env
+# bash explícito: git en Windows no guarda el bit de ejecución de nocturno.sh
+ExecStart=/bin/bash /opt/mft/%i/jobs/nocturno.sh
+Nice=10
+# exit 1/2/3 marcan la unidad como fallida (se ve con `systemctl status` / `journalctl -u mft-nocturno@<instancia>`)
