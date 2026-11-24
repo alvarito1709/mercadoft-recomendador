@@ -39,6 +39,7 @@ RECO_API_KEY=<clave> RECO_MODEL_PATH=out/modelo.joblib uv run uvicorn mft.api:ap
 |---|---|
 | `GET /health` | Estado y versión del modelo (sin API key) |
 | `POST /recomendar` | Recomendaciones (header `X-API-Key`) |
+| `POST /similares` | Productos parecidos a uno dado (header `X-API-Key`) |
 
 ```json
 POST /recomendar
@@ -57,6 +58,10 @@ POST /recomendar
 - **Arranque en frío:** sin productos conocidos ni búsquedas utilizables → `popularidad` (`motivo: sin_historial`). Con al menos un producto
   conocido o una búsqueda utilizable → `contenido`. Si el perfil no se parece a ningún candidato → `popularidad` (`perfil_sin_similitud`).
 - Nunca devuelve productos no elegibles, ya conocidos por el usuario ni los de `excluir`.
+- **`POST /similares`** `{"producto_id": 123, "n": 10}` → `{"modelo_version": "...", "productos": [{"producto_id": 88, "score": 0.41}]}`.
+  No depende del usuario (el backend puede cachear la respuesta). Devuelve solo productos elegibles, nunca el mismo, con similitud
+  (coseno) mayor o igual a `RECO_SIMILARES_MIN` (por defecto 0.10; puede devolver menos de `n` o ninguno). `404` si el modelo no
+  conoce el producto (p. ej. se creó después del último entrenamiento). Costo: ~1 ms con 5.000 productos.
 - El modelo se recarga solo cuando `modelo.joblib` cambia en disco (cada ≤ 30 s); el job nocturno debe reemplazarlo con
   un rename atómico. Si la recarga falla, sigue sirviendo la versión anterior.
 

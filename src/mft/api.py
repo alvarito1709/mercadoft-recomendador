@@ -3,6 +3,7 @@ API de recomendación (FastAPI).
 
   GET  /health       estado y versión del modelo (sin autenticación; para el health check del balanceador)
   POST /recomendar   recomendaciones para un usuario (header X-API-Key)
+  POST /similares    productos parecidos a uno dado (header X-API-Key; no depende del usuario)
 
 Variables de entorno:
   RECO_API_KEY      clave compartida con el backend (obligatoria)
@@ -51,6 +52,8 @@ def _calentar(store) -> None:
         ids = [int(i) for i in m.ids[:5]]
         m.recomendar([(i, "vista") for i in ids], ["calentamiento"], 5, [])   # camino personalizado + búsqueda
         m.recomendar([], [], 5, [])                                              # camino de popularidad
+        if len(m.ids):
+            m.similares(int(m.ids[0]), 5)                                        # camino de similares
         log.info("calentamiento listo en %.0f ms", (time.perf_counter() - t0) * 1000)
     except Exception as e:  # noqa: BLE001
         log.warning("el calentamiento falló (%s: %s); el primer pedido puede ser lento", type(e).__name__, e)
@@ -76,6 +79,16 @@ class Pedido(BaseModel):
 class Producto(BaseModel):
     producto_id: int
     score: float
+
+
+class PedidoSimilares(BaseModel):
+    producto_id: int
+    n: int = Field(10, ge=1, le=50)
+
+
+class RespuestaSimilares(BaseModel):
+    modelo_version: str
+    productos: list[Producto]
 
 
 class Respuesta(BaseModel):
@@ -132,6 +145,19 @@ def crear_app(store=None, api_key: str | None = None) -> FastAPI:
         return Respuesta(modelo_version=m.version, modo=r.modo, motivo=r.motivo, n_perfil=r.n_perfil,
                          n_busquedas=r.n_busquedas,
                          productos=[Producto(producto_id=a, score=b) for a, b in r.items])
+
+    @app.post("/similares", response_model=RespuestaSimilares, dependencies=[Depends(autenticar)])
+    def similares(p: PedidoSimilares):
+        """Productos parecidos a uno dado. No depende del usuario, así que el backend puede cachear la respuesta."""
+        t0 = time.perf_counter()
+        m = app.state.store.get()
+        items = m.similares(p.producto_id, p.n)
+        if items is None:
+            raise HTTPException(status_code=404, detail="producto desconocido para el modelo")
+        log.info("similares producto=%d devueltos=%d ms=%.1f", p.producto_id, len(items),
+                 (time.perf_counter() - t0) * 1000)
+        return RespuestaSimilares(modelo_version=m.version,
+                                  productos=[Producto(producto_id=a, score=b) for a, b in items])
 
     return app
 

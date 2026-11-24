@@ -141,3 +141,39 @@ def test_contrato_con_el_modelo_real():
     m = Modelo(d)
     r = m.recomendar([], ["gastronomia"], n=10)
     assert r.modo in ("contenido", "popularidad") and len(r.items) == 10
+
+
+# ----------------------------------------------------------------------------- similares
+def test_similares_son_del_mismo_rubro_sin_el_mismo_producto(modelo, prod):
+    joyas = sorted(ids_rubro(prod, "1"))
+    items = modelo.similares(joyas[0], 10)
+    ids = [p for p, _ in items]
+    assert ids and joyas[0] not in ids
+    assert set(ids) <= ids_rubro(prod, "1")
+
+
+def test_similares_solo_elegibles_ordenados_y_sobre_el_umbral(modelo, prod):
+    from mft.recomendador import MIN_SIMILITUD
+    no_elegibles = set(prod.loc[~prod["elegible"], "producto_id"])
+    for pid in prod["producto_id"].head(12):
+        items = modelo.similares(int(pid), 50)
+        scores = [s for _, s in items]
+        assert not ({p for p, _ in items} & no_elegibles)
+        assert scores == sorted(scores, reverse=True)
+        assert all(s >= MIN_SIMILITUD for s in scores)
+
+
+def test_similares_respeta_n_y_es_determinista(modelo, prod):
+    pid = int(prod["producto_id"].iloc[0])
+    assert len(modelo.similares(pid, 3)) <= 3
+    assert modelo.similares(pid, 10) == modelo.similares(pid, 10)
+
+
+def test_similares_de_un_producto_desconocido_es_none(modelo):
+    assert modelo.similares(999999, 5) is None
+
+
+def test_similares_de_un_producto_no_elegible_igual_devuelve_parecidos(modelo, prod):
+    pid = int(prod.loc[~prod["elegible"], "producto_id"].iloc[0])      # se puede mirar uno no elegible
+    items = modelo.similares(pid, 5)
+    assert items and pid not in [p for p, _ in items]
