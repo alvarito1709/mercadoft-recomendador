@@ -35,6 +35,10 @@ from . import busqueda as bq
 log = logging.getLogger("mft.recomendador")
 
 MAX_BUSQUEDAS = 5  # se usan las N búsquedas distintas más recientes
+# Similitud mínima (coseno) para que un producto cuente como "parecido" a otro. Las filas de X están normalizadas, así que el
+# producto punto es el coseno. El bloque de precio solo ya da ~0,07 entre productos sin nada en común: el umbral tiene que
+# quedar por encima para no mostrar como parecidos a productos que solo caen en el mismo rango de precio.
+MIN_SIMILITUD = float(os.environ.get("RECO_SIMILARES_MIN", "0.10"))   # ajustable sin tocar código
 CLAVES_MODELO = ("version", "producto_ids", "elegible", "X", "popularidad", "config", "pesos_por_tipo", "busqueda")
 
 
@@ -87,6 +91,23 @@ class Modelo:
         return Q[np.where(util)[0]] if util.any() else None
 
     # ------------------------------------------------------------------ recomendación
+    def similares(self, producto_id, n=10):
+        """Los productos más parecidos a uno dado: [(producto_id, score)] de mayor a menor similitud.
+
+        Solo elegibles, nunca el mismo producto y solo con similitud >= MIN_SIMILITUD (puede devolver menos de n o
+        ninguno). Desempate por popularidad y luego por id, para que el orden sea siempre el mismo.
+        Devuelve None si el modelo no conoce el producto (p. ej. se creó después del último entrenamiento).
+        """
+        f = self.fila.get(int(producto_id))
+        if f is None:
+            return None
+        score = (self.X @ self.X[f].T).toarray().ravel()
+        ok = self.elegible & (score >= MIN_SIMILITUD)
+        ok[f] = False
+        cand = np.where(ok)[0]
+        orden = np.lexsort((self.ids[cand], -self.pop[cand], -score[cand]))[:n]
+        return [(int(self.ids[cand[i]]), round(float(score[cand[i]]), 6)) for i in orden]
+
     def recomendar(self, interacciones, busquedas=(), n=10, excluir=()) -> Resultado:
         """interacciones: iterable de (producto_id, tipo). Devuelve hasta n productos."""
         pesos = {}

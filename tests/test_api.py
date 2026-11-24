@@ -62,3 +62,23 @@ def test_arranque_exige_api_key(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         with TestClient(crear_app(store=FakeStore(Modelo(construir_dict_modelo()[0])))):
             pass
+
+
+def test_similares_ok(cliente, prod):
+    pid = int(prod["producto_id"].iloc[0])
+    r = cliente.post("/similares", json={"producto_id": pid, "n": 5}, headers=H)
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["modelo_version"] == "test"
+    ids = [p["producto_id"] for p in cuerpo["productos"]]
+    assert 0 < len(ids) <= 5 and pid not in ids
+
+
+def test_similares_producto_desconocido_da_404(cliente):
+    assert cliente.post("/similares", json={"producto_id": 999999}, headers=H).status_code == 404
+
+
+def test_similares_exige_clave_y_valida_n(cliente):
+    assert cliente.post("/similares", json={"producto_id": 100}).status_code == 401
+    assert cliente.post("/similares", json={"producto_id": 100, "n": 0}, headers=H).status_code == 422
+    assert cliente.post("/similares", json={"producto_id": 100, "n": 51}, headers=H).status_code == 422
