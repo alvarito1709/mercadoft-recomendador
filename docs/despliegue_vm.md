@@ -13,6 +13,16 @@ su puerto, su carpeta de modelos y su carpeta del bucket.
 
 Esta guía arma **dev**. Para prod se repite todo con `prod` en lugar de `dev` (otra API key, puerto 8000, 2 workers).
 
+**Código separado por instancia.** Cada instancia corre desde su propia copia del repo, con su propio `.venv`:
+
+| | dev | prod |
+|---|---|---|
+| Copia del repo | `/opt/mft/dev` | `/opt/mft/prod` |
+| Qué versión corre | una rama (`develop` o la de la feature) | un **tag** de release (`v0.1.0`, ...) |
+
+Así, un `git pull` para probar algo en dev no cambia ni el servicio ni el entrenamiento nocturno de prod. Para llevar
+una versión a prod hay que moverla a propósito (ver "Promover a PROD").
+
 ```
 backend (Tomcat, VM del backend) --HTTP, IP interna--> API del recomendador (esta VM, 8001/8000)
 backend --gcsfuse--> bucket training_snapshots_dev --gcloud storage cp--> job nocturno (esta VM) --> modelo --> API
@@ -67,20 +77,34 @@ gcloud storage buckets add-iam-policy-binding gs://training_snapshots_dev \
 ```bash
 sudo apt-get update && sudo apt-get install -y git curl
 sudo useradd --system --create-home --shell /usr/sbin/nologin mft
-sudo mkdir -p /opt/mercadoft-recomendador /var/lib/mft /etc/mft
-sudo chown mft:mft /opt/mercadoft-recomendador /var/lib/mft
+sudo mkdir -p /opt/mft /var/lib/mft /etc/mft
+sudo chown mft:mft /opt/mft /var/lib/mft
 
 # uv instalado para todos los usuarios (maneja Python 3.12 y las dependencias)
 curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
 ```
 
-Código (el repo es privado: usar un token de GitHub de solo lectura, permiso *Contents: read*, y sacarlo de la URL al terminar):
+Acceso al repo. Es privado, así que la VM usa una **clave de despliegue** de solo lectura (sirve para clonar hoy y para
+actualizar mañana, sin guardar tokens):
 
 ```bash
-sudo -H -u mft git clone --branch <RAMA> https://<USUARIO>:<TOKEN>@github.com/alvarito1709/mercadoft-recomendador.git /opt/mercadoft-recomendador
-sudo -H -u mft git -C /opt/mercadoft-recomendador remote set-url origin https://github.com/alvarito1709/mercadoft-recomendador.git
-cd /opt/mercadoft-recomendador
-sudo -H -u mft uv sync --no-dev --frozen
+sudo -H -u mft mkdir -m 700 /home/mft/.ssh
+sudo -H -u mft ssh-keygen -t ed25519 -N "" -C "mft@recomendador-vm" -f /home/mft/.ssh/id_ed25519
+sudo -H -u mft sh -c 'ssh-keyscan -t ed25519 github.com >> /home/mft/.ssh/known_hosts'
+sudo cat /home/mft/.ssh/id_ed25519.pub
+```
+
+Copiar esa clave pública en GitHub: repo `mercadoft-recomendador`, Settings, Deploy keys, Add deploy key
+(dejar **sin** "Allow write access"). Probar con `sudo -H -u mft ssh -T git@github.com` (responde que autenticó, sin shell).
+
+Código: una copia por instancia, cada una con su `.venv`.
+
+```bash
+URL=git@github.com:alvarito1709/mercadoft-recomendador.git
+sudo -H -u mft git clone --branch <RAMA_DE_DEV> $URL /opt/mft/dev
+sudo -H -u mft git clone --branch <TAG_DE_PROD> $URL /opt/mft/prod      # queda en HEAD desacoplado, es lo esperado
+(cd /opt/mft/dev  && sudo -H -u mft uv sync --no-dev --frozen)
+(cd /opt/mft/prod && sudo -H -u mft uv sync --no-dev --frozen)
 ```
 
 ## 4. Archivo de la instancia
@@ -113,7 +137,7 @@ en la primera corrida; no la bloquea.
 ## 6. Instalar las unidades y entrenar el primer modelo
 
 ```bash
-cd /opt/mercadoft-recomendador
+cd /opt/mft/dev
 sudo install -m 644 jobs/systemd/mft-api@.service jobs/systemd/mft-nocturno@.service jobs/systemd/mft-nocturno@.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 
@@ -172,9 +196,33 @@ Chequeo: pedir `listarAleatorio` con un usuario con sesión; la respuesta trae e
 | Ver logs de la API | `journalctl -u mft-api@dev -f` |
 | Ver el último entrenamiento | `journalctl -u mft-nocturno@dev -n 100 --no-pager` |
 | Entrenar a mano | `sudo systemctl start mft-nocturno@dev.service` |
-| Volver al modelo anterior | `sudo -u mft bash -c 'set -a; . /etc/mft/dev.env; set +a; /opt/mercadoft-recomendador/jobs/nocturno.sh --rollback'` |
-| Actualizar el código | `cd /opt/mercadoft-recomendador && sudo -H -u mft git pull && sudo -H -u mft uv sync --no-dev --frozen && sudo systemctl restart mft-api@dev` |
+| Volver al modelo anterior | `sudo -u mft bash -c 'set -a; . /etc/mft/dev.env; set +a; /opt/mft/dev/jobs/nocturno.sh --rollback'` (para prod: `prod.env` y `/opt/mft/prod`) |
+| Actualizar dev | `cd /opt/mft/dev && sudo -H -u mft git pull && sudo -H -u mft uv sync --no-dev --frozen && sudo systemctl restart mft-api@dev` |
+| Promover a prod | ver la sección siguiente |
 | Rotar la API key | cambiarla en `/etc/mft/dev.env` y en Tomcat, y `sudo systemctl restart mft-api@dev` |
+
+## Promover a PROD
+
+Prod nunca sigue una rama: corre un tag que se mueve a propósito, después de probarlo en dev.
+
+```bash
+# 1) Desde tu PC: el commit ya probado en dev se etiqueta y se sube
+git tag -a v0.2.0 -m "descripcion del cambio"
+git push origin v0.2.0
+
+# 2) En la VM: mover prod al tag. Conviene hacerlo lejos de la ventana del entrenamiento (03:30 a 05:00).
+sudo -H -u mft git -C /opt/mft/prod fetch --tags
+sudo -H -u mft git -C /opt/mft/prod checkout v0.2.0
+(cd /opt/mft/prod && sudo -H -u mft uv sync --no-dev --frozen)
+sudo systemctl restart mft-api@prod
+curl -s http://$(hostname -I | awk '{print $1}'):8000/health
+```
+
+Si algo sale mal, volver al tag anterior con `git checkout <tag_anterior>` y repetir el `uv sync` y el reinicio.
+Mientras la API reinicia (unos segundos) el backend sirve el listado aleatorio; no hay errores para los usuarios.
+
+Un cambio que modifique el formato del `modelo.joblib` hay que promoverlo de a poco: primero la API de prod con el
+código nuevo (que lea los dos formatos) y recién después el entrenamiento.
 
 ## Problemas frecuentes
 

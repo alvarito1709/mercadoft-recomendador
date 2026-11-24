@@ -6,11 +6,12 @@ ConditionPathExists=/etc/mft/%i.env
 [Service]
 User=mft
 Group=mft
-WorkingDirectory=/opt/mercadoft-recomendador
-# Plantilla: una instancia por entorno (dev, prod). Cada una lee /etc/mft/<instancia>.env (permisos 640 root:mft,
+WorkingDirectory=/opt/mft/%i
+# Plantilla: una instancia por entorno (dev, prod), cada una con su propia copia del repo en /opt/mft/<instancia>
+# (con su .venv): dev sigue una rama y prod queda fijo en un tag. Cada una lee /etc/mft/<instancia>.env (permisos 640 root:mft,
 # fuera del repo): RECO_API_KEY, RECO_HOST, RECO_PORT, RECO_WORKERS y RECO_MODEL_PATH. Ver instancia.env.ejemplo.
 EnvironmentFile=/etc/mft/%i.env
-ExecStart=/opt/mercadoft-recomendador/.venv/bin/uvicorn mft.api:app --host ${RECO_HOST} --port ${RECO_PORT} --workers ${RECO_WORKERS}
+ExecStart=/opt/mft/%i/.venv/bin/uvicorn mft.api:app --host ${RECO_HOST} --port ${RECO_PORT} --workers ${RECO_WORKERS}
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
